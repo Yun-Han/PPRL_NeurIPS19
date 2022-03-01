@@ -13,10 +13,11 @@ def GetUniformAction():
     while (1):
         x = np.random.uniform() * 2.0 - 1.0;
         y = np.random.uniform() * 2.0 - 1.0;
-        d = x*x+y*y 
+        z = np.random.uniform() * 2.0 - 1.0;
+        d = x*x+y*y + z*z
         if d<1:
             break
-    return np.array([x,y])
+    return np.array([x,y,z])
 
 class dynamic(object):
     """docstring for LDS"""
@@ -278,4 +279,4 @@ class attacker1(object):
                     D0[t][3]
                     ))
 
-      return D,Qdag,Rdag,qdag,cdag,cdag,obj
+      return D,Qdag,Rdag,qdag,cdag,obj
