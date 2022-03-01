@@ -32,7 +32,7 @@ class dynamic(object):
         self.sigma = sigma
 
     def transit(self, s, a):
-        r = -(s.dot(self.Q).dot(s)/2.0+self.q.dot(s)+a.dot(self.R).dot(a)+self.c)
+        r = s.dot(self.Q).dot(s)+self.q.dot(s)+a.dot(self.R).dot(a)+self.c
         mean = [0 for i in range(self.n)]
         cov = np.eye(self.n)
         sp = self.A.dot(s)+self.B.dot(a)+np.random.multivariate_normal(mean, cov)*self.sigma
@@ -97,7 +97,7 @@ class eqLQR(object):
             st = D[t][0]
             at = D[t][1]
             rt = D[t][2]
-            exp = st.T*Q*st/2.0+q.T*st+at.T*R*at+c+rt
+            exp = st.T*Q*st+q.T*st+at.T*R*at+c - rt
             obj_MSSE = obj_MSSE + cvx.sum_squares(exp)
         constraints = []
         constraints.append((R>>self.eps*np.eye(d)))
@@ -124,7 +124,7 @@ class eqLQR(object):
         K = -gamma*np.linalg.inv(R+gamma*B.T.dot(P).dot(B)).dot(B.T).dot(P).dot(A)
         n = len(A)
         p = np.linalg.inv(np.eye(n)-gamma*(A+B.dot(K)).T).dot(q)
-        k = -gamma*np.linalg.inv(R+gamma*(B.T).dot(P).dot(B)).dot(B.T).dot(p)
+        k = -gamma*np.linalg.inv(R+gamma*(B.T).dot(P).dot(B)).dot(B.T).dot(p)/2
         self.K = K
         self.P = P
         self.p = p
@@ -163,7 +163,7 @@ class attacker(object):
         cons1 = -gamma*B.T*P*A-(R+gamma*B.T*P*B)*K
         constraints.append((cons1==0))
 
-        cons2 = -gamma*B.T*p-(R+gamma*B.T*P*B)*k
+        cons2 = -gamma*B.T*p-(R+gamma*B.T*P*B)*k*2
         constraints.append((cons2==0))
 
         cons3 = P-(gamma*A.T*P*(A+B*K)+Q)
@@ -182,7 +182,7 @@ class attacker(object):
             at = D0[t][1]
             M = np.outer(st,st)
             N = np.outer(at,at)
-            temp = cvx.quad_form(st, Q)/2+cvx.quad_form(at, R)+q.T*st+c+r[t]
+            temp = cvx.quad_form(st, Q) +cvx.quad_form(at, R)+q.T*st+c-r[t]
             exp1 = exp1+temp*M
             exp2 = exp2+temp*N
             exp3 = exp3+temp*st
@@ -205,3 +205,77 @@ class attacker(object):
             D.append((D0[t][0],D0[t][1],rs[t],D0[t][3]))
 
         return D, obj
+
+
+class attacker1(object):
+  """docstring for attack"""
+  def __init__(self, alpha):
+      self.alpha = alpha
+
+  def attack1(self, D0, learner, K, k):
+      gamma = learner.gamma
+      A = np.matrix(learner.Ahat)
+      B = np.matrix(learner.Bhat)
+      T = len(D0)
+      n = len(D0[0][0])
+      d = len(D0[0][1])
+      r0 = [D0[t][2] for t in range(T)]
+      eps = learner.eps
+
+      Q = cvx.Variable((n,n), PSD=True, name='Q')
+      R = cvx.Variable((d,d), PSD=True, name='R')
+      p = cvx.Variable(n, name='p')
+      q = cvx.Variable(n, name='q')
+      c = cvx.Variable(1, name='c')
+      P = cvx.Variable((n,n), PSD=True, name='P')
+      
+      obj_MSSE = 0
+      for t in range(T):
+            st = D0[t][0]
+            at = D0[t][1]
+            exp = D0[t][0].T*Q*D0[t][0]+q.T*D0[t][0]+D0[t][1].T*R*D0[t][1]+c-r0[t]
+            obj_MSSE = obj_MSSE + cvx.sum_squares(exp)
+
+      attack_cost = cvx.Minimize(obj_MSSE)
+      
+      constraints = []
+
+      # positive definite constraints with eps margin
+      constraints.append((R>>eps*np.eye(d)))
+
+      # target policy constraint
+      cons1 = -gamma*B.T*P*A-(R+gamma*B.T*P*B)*K
+      constraints.append((cons1==0))
+
+      cons2 = -gamma*B.T*p-(R+gamma*B.T*P*B)*k*2
+      constraints.append((cons2==0))
+
+      cons3 = P-(gamma*A.T*P*(A+B*K)+Q)
+      constraints.append((cons3==0))
+      
+      cons4 = p-(q+gamma*(A+B*K).T*p)
+      constraints.append((cons4==0))
+
+      prob = cvx.Problem(attack_cost, constraints)
+
+      # two solver options: using CVXOPT or mosek
+      prob.solve(solver=cvx.CVXOPT)
+      # prob.solve(solver=cvx.MOSEK, verbose=False, mosek_params=mosek_params)
+
+      Qdag = Q.value
+      Rdag = R.value
+      qdag = q.value
+      cdag = c.value
+      obj = prob.value
+
+      D = []
+      for t in range(T):
+          st = D0[t][0]
+          at = D0[t][1]
+          D.append((D0[t][0],
+                    D0[t][1],
+                    st.T@Qdag@st+qdag.T@st+at.T@Rdag@at+cdag,
+                    D0[t][3]
+                    ))
+
+      return D,Qdag,Rdag,qdag,cdag,cdag,obj
