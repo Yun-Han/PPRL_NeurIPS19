@@ -280,3 +280,60 @@ class attacker1(object):
                     ))
 
       return D,Qdag,Rdag,qdag,cdag,obj
+
+
+class attacker0(object):
+  """docstring for attack"""
+  def __init__(self, alpha):
+      self.alpha = alpha
+
+  def attack0(self, Q0, R0, q0, learner, K, k):
+      A = np.matrix(learner.Ahat)
+      B = np.matrix(learner.Bhat)
+      n = len(A)
+      d = len(B.T)
+      gamma = learner.gamma
+      eps = learner.eps
+
+      Q = cvx.Variable((n,n), PSD=True, name='Q')
+      R = cvx.Variable((d,d), PSD=True, name='R')
+      p = cvx.Variable(n, name='p')
+      q = cvx.Variable(n, name='q')
+      c = cvx.Variable(1, name='c')
+      P = cvx.Variable((n,n), PSD=True, name='P')
+      
+      obj_MSSE = cvx.pnorm(Q-Q0,self.alpha) + cvx.pnorm(R-R0,self.alpha) + cvx.pnorm(q-q0,self.alpha)
+
+      attack_cost = cvx.Minimize(obj_MSSE)
+      
+      constraints = []
+
+      # positive definite constraints with eps margin
+      constraints.append((R>>eps*np.eye(d)))
+
+      # target policy constraint
+      cons1 = -gamma*B.T*P*A-(R+gamma*B.T*P*B)*K
+      constraints.append((cons1==0))
+
+      cons2 = -gamma*B.T*p-(R+gamma*B.T*P*B)*k*2
+      constraints.append((cons2==0))
+
+      cons3 = P-(gamma*A.T*P*(A+B*K)+Q)
+      constraints.append((cons3==0))
+      
+      cons4 = p-(q+gamma*(A+B*K).T*p)
+      constraints.append((cons4==0))
+
+      prob = cvx.Problem(attack_cost, constraints)
+
+      # two solver options: using CVXOPT or mosek
+      prob.solve(solver=cvx.CVXOPT)
+      # prob.solve(solver=cvx.MOSEK, verbose=False, mosek_params=mosek_params)
+
+      Qdag = Q.value
+      Rdag = R.value
+      qdag = q.value
+      cdag = c.value
+      obj = prob.value
+
+      return Qdag,Rdag,qdag,cdag,obj
