@@ -235,7 +235,10 @@ class attacker1(object):
             st = D0[t][0]
             at = D0[t][1]
             exp = D0[t][0].T*Q*D0[t][0]+q.T*D0[t][0]+D0[t][1].T*R*D0[t][1]+c-r0[t]
-            obj_MSSE = obj_MSSE + cvx.sum_squares(exp)
+            if self.alpha == 2.0:
+              obj_MSSE = obj_MSSE + cvx.sum_squares(exp)
+            else:
+              obj_MSSE = obj_MSSE + cvx.abs(exp)
 
       attack_cost = cvx.Minimize(obj_MSSE)
       
